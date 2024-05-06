@@ -18,3 +18,5 @@ And we have a beautiful Docker container and image!
 **But!** Post-install still fails though.
 
 You're welcome to try to run it in Podman unprivileged or in Docker with weird flags.
+
+Or just continue where I stopped, by debugging this command: `sudo podman exec -it yunodock yunohost tools postinstall`
