@@ -31,13 +31,15 @@ And we have a beautiful Docker container and image!
 ### Restarting services
 - After the post-install, all services are in a failed state, manually restarting them fixes it though (except `yunohost-firewall`, that's expected).
 
-## Podman rootless
+## Alternative setups
+
+### Podman rootless
 
 It works (first check if Podman rootless works correctly by running a simple container), but you have no IP (this is normal), so you'll need to bind the 443 (and 80) ports of the container to one of yours, and if you can't bind to your host's port 443, add a reverse proxy to expose it.
 
 `podman run -d -p 8000:80 -p 8443:443 docker.io/ketsapiwiq/yunodock`
 
-## Docker
+### Docker
 
 This should work in Docker with weird flags like `-v /sys/fs/cgroup:/sys/fs/cgroup`, however I couldn't run any systemd-enabled images on my Docker.
 
