@@ -23,12 +23,4 @@ WORKDIR /
 # RUN set -xe \
 #     && bash install.sh -a -f -d ${INSTALL_TYPE}
 
-# WORKDIR /
-# RUN git clone https://github.com/yunohost/ynh-dev
-# WORKDIR /ynh-dev
-# RUN git clone https://github.com/YunoHost/moulinette
-# RUN git clone https://github.com/YunoHost/yunohost
-# RUN git clone https://github.com/YunoHost/yunohost-admin
-# RUN git clone https://github.com/YunoHost/SSOwat ssowat
-
 CMD ["/lib/systemd/systemd"]
