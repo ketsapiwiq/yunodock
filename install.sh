@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (C) 2015-2020 YunoHost
+# Copyright (C) 2015-2023 YunoHost
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -109,7 +109,10 @@ function main()
     step register_debconf              || die "Unable to insert new values into debconf database"
     step workarounds_because_sysadmin_sucks || die "Unable to run stupid workarounds"
     step install_yunohost_packages     || die "Installation of Yunohost packages failed"
-    step restart_services              || die "Error caught during services restart"
+
+    if [[ "$BUILD_IMAGE" == "0" ]] ; then
+        step restart_services          || die "Error caught during services restart"
+    fi
 
     if is_raspbian ; then
         step del_user_pi     || die "Unable to delete user pi"
@@ -232,7 +235,10 @@ function check_assertions()
     fi
 
     # Assert we're root
-    [[ "$(id -u)" == "0" ]] || die "This script must be run as root. On most setups, typing 'sudo -i' can be used to become root."
+    [[ "$(id -u)" == "0" ]] || die "This script must be run as root. On most setups, the command 'sudo -i' can be run first to become root."
+
+    # Check PATH var
+    [[ "$PATH" == *"/sbin"* ]] || die "Your environment PATH variable must contains /sbin directory. Maybe try running 'PATH=/sbin:\$PATH' to fix this."
 
     # Assert systemd is installed
     command -v systemctl > /dev/null || die "YunoHost requires systemd to be installed."
@@ -304,7 +310,7 @@ function upgrade_system() {
 
 function install_script_dependencies() {
     # dependencies of the install script itself
-    local DEPENDENCIES="lsb-release wget whiptail gnupg apt-transport-https"
+    local DEPENDENCIES="lsb-release whiptail gnupg apt-transport-https adduser"
 
     if [[ "$AUTOMODE" == "0" ]] ;
     then
@@ -399,7 +405,7 @@ function setup_package_source() {
 
     # Debian repository
 
-    local CUSTOMDEB="deb http://forge.yunohost.org/debian/ bullseye stable"
+    local CUSTOMDEB="deb [signed-by=/usr/share/keyrings/yunohost-archive-keyring.gpg] http://forge.yunohost.org/debian/ bullseye stable"
 
     if [[ "$DISTRIB" == "stable" ]] ; then
         echo "$CUSTOMDEB" > $CUSTOMAPT
@@ -410,14 +416,28 @@ function setup_package_source() {
     fi
 
     # Add YunoHost repository key to the keyring
-    wget -O- https://forge.yunohost.org/yunohost_bullseye.asc -q | apt-key add -qq - >/dev/null 2>&1
+    curl --fail --silent https://forge.yunohost.org/yunohost_bullseye.asc | gpg --dearmor > /usr/share/keyrings/yunohost-archive-keyring.gpg
+    apt-get -qq update
 }
 
 function register_debconf() {
     debconf-set-selections << EOF
+slapd slapd/password1 password yunohost
+slapd slapd/password2 password yunohost
+slapd slapd/domain    string yunohost.org
+slapd shared/organization     string yunohost.org
+slapd	slapd/allow_ldap_v2	boolean	false
+slapd	slapd/invalid_config	boolean	true
+slapd	slapd/backend	select	MDB
 postfix postfix/main_mailer_type        select Internet Site
 postfix postfix/mailname string /etc/mailname
-
+nslcd	nslcd/ldap-bindpw	password
+nslcd	nslcd/ldap-starttls	boolean	false
+nslcd	nslcd/ldap-reqcert	select
+nslcd	nslcd/ldap-uris	string	ldap://localhost/
+nslcd	nslcd/ldap-binddn	string
+nslcd	nslcd/ldap-base	string	dc=yunohost,dc=org
+libnss-ldapd    libnss-ldapd/nsswitch multiselect group, passwd, shadow
 postsrsd postsrsd/domain string yunohost.org
 EOF
 }
@@ -452,27 +472,27 @@ function workarounds_because_sysadmin_sucks() {
     # be already in use in another system than the automated one (which tries to use
     # consecutive uids).
 
-    # # Return without error if avahi already exists
-    # if id avahi > /dev/null 2>&1 ; then
-    #     info "User avahi already exists (with uid $(id avahi)), skipping avahi workaround"
-    #     return 0
-    # fi
+    # Return without error if avahi already exists
+    if id avahi > /dev/null 2>&1 ; then
+        info "User avahi already exists (with uid $(id avahi)), skipping avahi workaround"
+        return 0
+    fi
 
-    # # Get a random unused uid between 500 and 999 (system-user)
-    # local avahi_id=$((500 + RANDOM % 500))
-    # while cut -d ':' -f 3 /etc/passwd | grep -q $avahi_id ;
-    # do
-    #     avahi_id=$((500 + RANDOM % 500))
-    # done
+    # Get a random unused uid between 500 and 999 (system-user)
+    local avahi_id=$((500 + RANDOM % 500))
+    while cut -d ':' -f 3 /etc/passwd | grep -q $avahi_id ;
+    do
+        avahi_id=$((500 + RANDOM % 500))
+    done
 
-    # info "Workaround for avahi : creating avahi user with uid $avahi_id"
+    info "Workaround for avahi : creating avahi user with uid $avahi_id"
 
-    # # Use the same adduser parameter as in the avahi-daemon postinst script
-    # # Just specify --uid explicitely
-    # adduser --disabled-password  --quiet --system     \
-    #     --home /var/run/avahi-daemon --no-create-home \
-    #     --gecos "Avahi mDNS daemon" --group avahi     \
-    #     --uid $avahi_id
+    # Use the same adduser parameter as in the avahi-daemon postinst script
+    # Just specify --uid explicitely
+    adduser --disabled-password  --quiet --system     \
+        --home /var/run/avahi-daemon --no-create-home \
+        --gecos "Avahi mDNS daemon" --group avahi     \
+        --uid $avahi_id
 
 }
 
@@ -498,27 +518,27 @@ function install_yunohost_packages() {
     # At some point we may want to start trying to not install these by default
     # To have lighter systems
     # But that assumes that app explicitly declare their dependencies
-    # recommend_packages="php7.4-fpm mariadb-server metronome"
+    recommend_packages="php7.4-fpm mariadb-server metronome"
 
     # Install YunoHost
     apt_get_wrapper \
         -o Dpkg::Options::="--force-confold" \
         -o APT::install-recommends=true      \
         -y install                           \
-        yunohost yunohost-admin \
-        # disable postfix.
-         postfix
-        # $recommend_packages                  \
-    # || return 1
+        yunohost yunohost-admin postfix      \
+        $recommend_packages                  \
+    || return 1
 }
 
 function restart_services() {
-    # service slapd restart
+    service slapd restart
 #    service yunohost-firewall start
-    # service unscd restart
-    # service nslcd restart
+    service unscd restart
+    service nslcd restart
 
-    # NOTE : We don't fail if slapd fails to restart...
+    # For some reason sometimes dbus is not properly started/enabled ...
+    systemctl is-active dbus >/dev/null || systemctl enable dbus --now
+
     return 0
 }
 
