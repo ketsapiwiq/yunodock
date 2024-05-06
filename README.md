@@ -6,7 +6,7 @@ So we can do:
 ```
 sudo podman build -t yunodock:preinstall .
 sudo podman run -d --name yunodock yunodock:preinstall
-sudo podman exec yunodock:preinstall bash install.sh -a -f -d stable
+sudo podman exec yunodock bash install.sh -a -f -d stable
 sudo podman commit yunodock yunodock:installed
 ```
 
